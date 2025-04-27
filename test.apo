@@ -1,0 +1,7 @@
+#apocacore
+start:
+    ADDI x10, x0, 5
+    ADDI x11, x0, 6
+    ADD x12, x10, x11
+    SW x11, 16(x0)
+    LW x1, 16(x0)

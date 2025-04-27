@@ -1,49 +1,39 @@
 #!/usr/bin/env python
+from fileParser import Parser
+from constants import *
+import typing
 
-opCodes = {
-  'LUI'     :0b0110111,
-  'AUIPC'   :0b0010111,
-  'JAL'     :0b1101111,
-  'JALR'    :0b1100111,
-  'BRANCH'  :0b1100011,
-  'LOAD'    :0b0000011,
-  'STORE'   :0b0100011,
-  'ALU_IMM' :0b0010011,
-  'ALU_REG' :0b0110011,
-}
-
-funct3_codes={
-  'ADD_SUB' :0b000,
-  'SLL' :0b001,
-  'SLT' :0b010,
-  'SLTU' :0b011,
-  'XOR' :0b100,
-  'SRL_SRA' :0b101,
-  'OR' :0b110,
-  'AND' :0b111,
-}
-fp_opcodes = {
-    'FADD_S': 0b1010011,  # Floating-point add single-precision
-    'FSUB_S': 0b1010011,  # Floating-point subtract single-precision
-    'FMUL_S': 0b1010011,  # Floating-point multiply single-precision
-    'FDIV_S': 0b1010011,  # Floating-point divide single-precision
-}
-
-class apocacore:
+class ApocaCore:
   def __init__(self,memory_size=1024):
-    self.registers = [0]*32
-    self.f_registers =[0.0]*32
+    self.registers = [0]*16
+    self.f_registers =[0.0]*16 
     self.pc=0
     self.memory=[0]*memory_size
+
+    self._dispatch = {
+            (0, 0, None):      self._exec_nop,
+            # R-type :   (opcode, funct3_codes, funct7) → handler
+            (opCodes['ALU_REG'], funct3_codes['ADD_SUB'], 0b0000000): self._exec_add,
+            (opCodes['ALU_REG'], funct3_codes['ADD_SUB'], 0b0100000): self._exec_sub,
+            # I-type:
+            (opCodes['ALU_IMM'], funct3_codes['ADD_SUB'], None):      self._exec_addi,
+            (opCodes['LOAD'   ], funct3_codes['WORD'   ], None):      self._exec_load,
+            # S-type:
+            (opCodes['STORE'  ], funct3_codes['WORD'   ], None):         self._exec_store
+            # …load, store, branch entries…
+        }
+
   def run(self):
     for i in range(1024):  # Safety limit
-        if self.pc >= len(self.memory):
-            break
-        ins = self.fetch()
-        decoded = self.decode(ins)
-        self.execute(decoded[0], decoded[1], decoded[2], decoded[3], decoded[4], decoded[5], decoded[6])
+      while self.pc < self.program_length:
+            ins = self.fetch()
+            decoded = self.decode(ins)
+            self.execute(*decoded)
+
   def load_program(self,program):
-    self.memory[:len(program)]=program
+    self.memory[:len(program)] = program
+    self.program_length = len(program)
+
   def fetch(self):
     instruction = self.memory[self.pc]
     self.pc+=1
@@ -51,12 +41,11 @@ class apocacore:
   def decode(self, instruction):
     opcode = instruction & 0x7F
     rd = (instruction >> 7) & 0x1F
-    funct3 = (instruction >> 12) & 0x7
+    funct3_codes = (instruction >> 12) & 0x7
     rs1 = (instruction >> 15) & 0x1F
     rs2 = (instruction >> 20) & 0x1F
     funct7 = (instruction >> 25) & 0x7F
     
-    # Different immediate formats based on instruction type
     if opcode == opCodes['ALU_IMM'] or opcode == opCodes['LOAD'] or opcode == opCodes['JALR']:
         imm = (instruction >> 20) if (instruction >> 31) == 0 else (instruction >> 20) | 0xFFFFF000
     elif opcode == opCodes['STORE']:
@@ -77,32 +66,23 @@ class apocacore:
         # Default case (includes LUI, AUIPC which have upper immediate)
         imm = instruction >> 20
         
-    return opcode, rd, funct3, rs1, rs2, funct7, imm
-  def execute(self,opcode, rd, funct3,rs1,rs2,funct7, imm):
-    if(opcode ==opCodes['LUI']):
-      self.registers[rd] =imm<<12
-    elif( opcode == opCodes['ALU_IMM']):
-      if ( funct3==funct3_codes['ADD_SUB']):
-        self.registers[rd] = self.registers[rs1] +imm
-    elif (opcode ==opCodes['ALU_REG']):
-      if(funct7 ==0b0000000):
-        self.registers[rd] = self.registers[rs1]+self.registers[rs2]
-      elif(funct7==0b0100000):
-        self.registers[rd] = self.registers[rs1]-self.registers[rs2]
-    elif(opcode==opCodes['LOAD']):
-      if funct3==0b010:
-        self.registers[rd]=self.read_memory(self.registers[rs1]+imm, 4)
-    elif(opcode == opCodes['STORE']):
-      if funct3==0b010:
-        self.write_memory(self.registers[rs1] + imm, self.registers[rs2],4)
-    elif (opcode == opCodes['BRANCH']):
-      offset = (imm<<1)
-      if funct3==0b000:
-        if self.registers[rs1] ==self.registers[rs2]:
-          self.pc +=offset
-      if funct3==0b001:
-        if self.registers[rs1] !=self.registers[rs2]:
-          self.pc +=offset
+    return opcode, rd, funct3_codes, rs1, rs2, funct7, imm
+  def execute(self, opcode, rd, funct3, rs1, rs2, funct7, imm):
+    if opcode in [opCodes['ALU_REG']]:
+        key = (opcode, funct3, funct7)
+    else:
+        key = (opcode, funct3, None)
+    
+    if key in self._dispatch:
+        self._dispatch[key](rd, rs1, rs2, imm)
+    else:
+        raise Exception(f"Unknown instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}")
+  def examine_all_registers(self):
+    # group into rows of 8 registers
+    for base in range(0, 16, 8):
+        row = " ".join(f"x{j:02}={self.registers[j]:>3}" 
+                        for j in range(base, base+8))
+        print(row)
   def read_memory(self, address,size):
     value = 0
     for i in range(size):
@@ -111,7 +91,25 @@ class apocacore:
   def write_memory(self, address,value,size):
     for i in range(size):
       self.memory[address+i] = (value >> (i*8)) & 0xFF
-      
+  def _exec_add(self, rd, rs1, rs2, imm):
+        self.registers[rd] = self.registers[rs1] + self.registers[rs2]
+  def _exec_sub(self, rd, rs1, rs2, imm):
+      self.registers[rd] = self.registers[rs1] - self.registers[rs2]
+  def _exec_addi(self, rd, rs1, rs2, imm):
+        self.registers[rd] = self.registers[rs1] + imm
+  def _exec_load(self, rd, rs1, rs2, imm):
+        self.registers[rd]=self.read_memory(self.registers[rs1]+imm, 4)
+  def _exec_store(self, rd, rs1, rs2, imm):
+        self.write_memory(self.registers[rs1] + imm, self.registers[rs2],4)
+  def _exec_beq(self, rd, rs1, rs2, imm):
+        if self.registers[rs1] ==self.registers[rs2]:
+          self.pc +=(imm<<1)
+  def _exec_bne(self, rd, rs1, rs2, imm):
+        if self.registers[rs1] !=self.registers[rs2]:
+          self.pc +=(imm<<1)
+  def _exec_nop(self, rd, rs1, rs2, imm):
+        # do nothing
+        pass
 program = [
     0x00A00513,  # ADDI x10, x0, 5    # Set x10 = 5
     0x00600593,  # ADDI x11, x0, 6    # Set x11 = 6
@@ -120,9 +118,14 @@ program = [
     0x00002083,  # LW x1, 0(x0)       # Load into x1 from memory address 0+x0
 ]
 if __name__ == '__main__':
-    emulator = apocacore()
-    emulator.load_program(program)
-    emulator.run()
+    parser=Parser()
+    filename = parser.arguments()
+    machine = parser.assemble(filename)
+    if(parser.debug=='Run'):
+      emulator = ApocaCore()
+      emulator.load_program(machine)
+      emulator.run()
+      emulator.examine_all_registers()
     # Check results
-    print(f'Register x12 (should be 11): {emulator.registers[12]}')
-    print(f'Register x1 (loaded from memory): {emulator.registers[1]}')
+    #print(f'Register x12 (should be 16): {emulator.registers[12]}')
+    #print(f'Register x1 (loaded from memory): {emulator.registers[1]}')

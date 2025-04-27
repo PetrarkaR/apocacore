@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+
+"""PARSER FOR EASIER TESTING"""
+
+import re
+import argparse
+
+class Parser():
+  def __init__(self):
+      self.filename = None
+      self.errors = 0 
+      self.lines = []
+      self.commands = []
+      self.symbols = {}
+      self.debug = False
+      self.opcode_map = {
+            'ADDI': {'opcode': 0x13, 'funct3': 0x0},
+            'ADD':  {'opcode': 0x33, 'funct3': 0x0, 'funct7': 0x00},
+            'LW':   {'opcode': 0x03, 'funct3': 0x2},
+            'SW':   {'opcode': 0x23, 'funct3': 0x2},
+        }
+  def arguments(self):
+    parser =argparse.ArgumentParser(description='parser for the assembly of the custom processor')
+    parser.add_argument('-f',required=True,help='Input file')
+    parser.add_argument('-r',required=False,help='Debug mode')
+    args = parser.parse_args()
+    self.debug =args.r
+    return args.f
+  def load(self, filename):
+    self.filename = filename
+    with open(filename , 'r') as f:
+      self.lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+    if self.debug:
+      print(f"loaded {len(self.lines)} lines from {filename}")
+  
+  def first_pass(self):
+    pc=0
+    for line in self.lines:
+      m = re.match(r"^(\w+):",line)
+      if m:
+        label =m.group(1)
+        self.symbols[label] = pc
+        if self.debug:
+          print(f"label {label} at addres {pc}")
+      else:
+        pc+=4
+  def second_pass(self):
+    pc = 0
+    for line in self.lines:
+      if re.match(r"^\w+:",line):
+        continue
+      word = self.parse_line(line,pc)
+      self.commands.append(word)
+      pc+=4
+    if self.debug:
+            for addr, cmd in enumerate(self.commands):
+                print(f"{addr*4:04x}: {cmd:08x}")
+  def parse_line(self, line, pc):
+        # split tokens, filter empties
+        parts = [tok for tok in re.split(r"[,\s()]+", line) if tok]
+        mnemonic = parts[0].upper()
+        args = parts[1:]
+
+        info = self.opcode_map.get(mnemonic)
+        if not info:
+            raise ValueError(f"Unknown instruction '{mnemonic}' at PC {pc}")
+
+        # I-type: ADDI, LW
+        if mnemonic == 'ADDI' or mnemonic == 'LW':
+            rd = args[0]
+            # offset(base)
+            if mnemonic == 'LW':
+                # args: rd, offset, base
+                offset, base = args[1], args[2]
+            else:
+                # ADDI args: rd, rs, imm
+                base = args[1]; offset = args[2]
+            return self.encode_i_type(int(rd[1:]), int(base[1:]), int(offset), info['funct3'], info['opcode'])
+
+        # R-type: ADD
+        if mnemonic == 'ADD':
+            rd, rs1, rs2 = args
+            return self.encode_r_type(int(rd[1:]), int(rs1[1:]), int(rs2[1:]), info['funct3'], info['funct7'], info['opcode'])
+
+        # S-type: SW
+        if mnemonic == 'SW':
+            rs2 = args[0]
+            offset = args[1]
+            rs1 = args[2]
+            return self.encode_s_type(int(rs2[1:]), int(rs1[1:]), int(offset), info['funct3'], info['opcode'])
+
+        raise NotImplementedError(f"Encoding for '{mnemonic}' not implemented at PC {pc}")
+
+  def encode_r_type(self, rd, rs1, rs2, funct3, funct7, opcode):
+      # [funct7][rs2][rs1][funct3][rd][opcode]
+      return (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
+  def encode_i_type(self, rd, rs1, imm, funct3, opcode):
+      # [imm[11:0]][rs1][funct3][rd][opcode]
+      imm12 = imm & 0xfff
+      return (imm12 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
+  def encode_s_type(self, rs2, rs1, imm, funct3, opcode):
+      # [imm[11:5]][rs2][rs1][funct3][imm[4:0]][opcode]
+      imm11_5 = (imm >> 5) & 0x7f
+      imm4_0 = imm & 0x1f
+      return (imm11_5 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (imm4_0 << 7) | opcode
+  def assemble(self, filename):
+      self.load(filename)
+      self.first_pass()
+      self.second_pass()
+      return self.commands
+
+  def parse(self, filename):
+      if(filename.endswith('.apo')==True):
+        with open(filename,'r') as parsed:
+          lines = parsed.readlines()
+          numLines=len(lines)
+          print(f"File started successfully!\nTotal number of lines : {numLines}")
+          if(lines[0].strip()=='#apocacore'):
+            print("\nDone parsing")
+      else:
+        print("Invalid file format!")
+  
+
+
+"""if __name__=="__main__":
+  main()
+"""
+
