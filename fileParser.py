@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
-"""PARSER FOR EASIER TESTING"""
+"""PARSER FOR EASIER USER PROGRAMMING"""
 
 import re
 import argparse
+from constants import *
 
 class Parser():
   def __init__(self):
@@ -13,24 +14,21 @@ class Parser():
       self.commands = []
       self.symbols = {}
       self.debug = False
-      self.opcode_map = {
-            'ADDI': {'opcode': 0x13, 'funct3': 0x0},
-            'ADD':  {'opcode': 0x33, 'funct3': 0x0, 'funct7': 0x00},
-            'LW':   {'opcode': 0x03, 'funct3': 0x2},
-            'SW':   {'opcode': 0x23, 'funct3': 0x2},
-        }
+      self.opcode_map = instruction_map
   def arguments(self):
     parser =argparse.ArgumentParser(description='parser for the assembly of the custom processor')
     parser.add_argument('-f',required=True,help='Input file')
-    parser.add_argument('-r',required=False,help='Debug mode')
+    parser.add_argument('-r',required=False,help='Run mode')
+    parser.add_argument('-d',required=False,help='debug')
     args = parser.parse_args()
-    self.debug =args.r
+    self.run =args.r
+    self.debug =args.d
     return args.f
   def load(self, filename):
     self.filename = filename
     with open(filename , 'r') as f:
       self.lines = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    if self.debug:
+    if self.debug=='debug':
       print(f"loaded {len(self.lines)} lines from {filename}")
   
   def first_pass(self):
@@ -40,7 +38,7 @@ class Parser():
       if m:
         label =m.group(1)
         self.symbols[label] = pc
-        if self.debug:
+        if self.debug=='debug':
           print(f"label {label} at addres {pc}")
       else:
         pc+=4
@@ -52,7 +50,7 @@ class Parser():
       word = self.parse_line(line,pc)
       self.commands.append(word)
       pc+=4
-    if self.debug:
+    if self.debug=='debug':
             for addr, cmd in enumerate(self.commands):
                 print(f"{addr*4:04x}: {cmd:08x}")
   def parse_line(self, line, pc):
@@ -65,7 +63,7 @@ class Parser():
         if not info:
             raise ValueError(f"Unknown instruction '{mnemonic}' at PC {pc}")
 
-        # I-type: ADDI, LW
+        # I-type: ADDI, LW, add more later, vectors probably
         if mnemonic == 'ADDI' or mnemonic == 'LW':
             rd = args[0]
             # offset(base)
@@ -77,7 +75,7 @@ class Parser():
                 base = args[1]; offset = args[2]
             return self.encode_i_type(int(rd[1:]), int(base[1:]), int(offset), info['funct3'], info['opcode'])
 
-        # R-type: ADD
+        # R-type: ADD, need to add more later
         if mnemonic == 'ADD':
             rd, rs1, rs2 = args
             return self.encode_r_type(int(rd[1:]), int(rs1[1:]), int(rs2[1:]), info['funct3'], info['funct7'], info['opcode'])

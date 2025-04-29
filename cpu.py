@@ -2,7 +2,7 @@
 from fileParser import Parser
 from constants import *
 import typing
-
+from exec import InstructionHandlers
 class ApocaCore:
   def __init__(self,memory_size=1024):
     self.registers = [0]*16
@@ -10,19 +10,69 @@ class ApocaCore:
     self.pc=0
     self.memory=[0]*memory_size
 
-    self._dispatch = {
-            (0, 0, None):      self._exec_nop,
-            # R-type :   (opcode, funct3_codes, funct7) → handler
-            (opCodes['ALU_REG'], funct3_codes['ADD_SUB'], 0b0000000): self._exec_add,
-            (opCodes['ALU_REG'], funct3_codes['ADD_SUB'], 0b0100000): self._exec_sub,
-            # I-type:
-            (opCodes['ALU_IMM'], funct3_codes['ADD_SUB'], None):      self._exec_addi,
-            (opCodes['LOAD'   ], funct3_codes['WORD'   ], None):      self._exec_load,
-            # S-type:
-            (opCodes['STORE'  ], funct3_codes['WORD'   ], None):         self._exec_store
-            # …load, store, branch entries…
-        }
+    self.build_map()
 
+  def build_map(self):
+    handlers=InstructionHandlers()
+    self.dispatch = {
+            # Special case for NOP
+            (0, 0, 0): handlers.exec_nop,
+            
+            # R-type instructions
+            # ALU operations
+            (opCodes['ALU_REG'], funct3_codes['ADD_SUB'], funct7_codes['STANDARD']): handlers.exec_add,
+            (opCodes['ALU_REG'], funct3_codes['ADD_SUB'], funct7_codes['SUB']): handlers.exec_sub,
+            (opCodes['ALU_REG'], funct3_codes['SLL'], funct7_codes['STANDARD']): handlers.exec_sll,
+            (opCodes['ALU_REG'], funct3_codes['SLT'], funct7_codes['STANDARD']): handlers.exec_slt,
+            (opCodes['ALU_REG'], funct3_codes['SLTU'], funct7_codes['STANDARD']): handlers.exec_sltu,
+            (opCodes['ALU_REG'], funct3_codes['XOR'], funct7_codes['STANDARD']): handlers.exec_xor,
+            (opCodes['ALU_REG'], funct3_codes['SRL_SRA'], funct7_codes['STANDARD']): handlers.exec_srl,
+            (opCodes['ALU_REG'], funct3_codes['SRL_SRA'], funct7_codes['SRA']): handlers.exec_sra,
+            (opCodes['ALU_REG'], funct3_codes['OR'], funct7_codes['STANDARD']): handlers.exec_or,
+            (opCodes['ALU_REG'], funct3_codes['AND'], funct7_codes['STANDARD']): handlers.exec_and,
+            
+            # I-type instructions
+            # ALU operations with immediates
+            (opCodes['ALU_IMM'], funct3_codes['ADD_SUB'], None): handlers.exec_addi,
+            (opCodes['ALU_IMM'], funct3_codes['SLT'], None): handlers.exec_slti,
+            (opCodes['ALU_IMM'], funct3_codes['SLTU'], None): handlers.exec_sltiu,
+            (opCodes['ALU_IMM'], funct3_codes['XOR'], None): handlers.exec_xori,
+            (opCodes['ALU_IMM'], funct3_codes['OR'], None): handlers.exec_ori,
+            (opCodes['ALU_IMM'], funct3_codes['AND'], None): handlers.exec_andi,
+            
+            # Shifts with immediates (these might have funct7 values in some implementations)
+            (opCodes['ALU_IMM'], funct3_codes['SLL'], None): handlers.exec_slli,
+            (opCodes['ALU_IMM'], funct3_codes['SRL_SRA'], 0b0000000): handlers.exec_srli,
+            (opCodes['ALU_IMM'], funct3_codes['SRL_SRA'], 0b0100000): handlers.exec_srai,
+            
+            # Load instructions
+            (opCodes['LOAD'], funct3_codes['BYTE'], None): handlers.exec_lb,
+            (opCodes['LOAD'], funct3_codes['HALF'], None): handlers.exec_lh,
+            (opCodes['LOAD'], funct3_codes['WORD'], None): handlers.exec_lw,
+            (opCodes['LOAD'], funct3_codes['BYTE_U'], None): handlers.exec_lbu,
+            (opCodes['LOAD'], funct3_codes['HALF_U'], None): handlers.exec_lhu,
+            
+            # Store instructions
+            (opCodes['STORE'], funct3_codes['BYTE'], None): handlers.exec_sb,
+            (opCodes['STORE'], funct3_codes['HALF'], None): handlers.exec_sh,
+            (opCodes['STORE'], funct3_codes['WORD'], None): handlers.exec_sw,
+            
+            # Branch instructions
+            (opCodes['BRANCH'], funct3_codes['BEQ'], None): handlers.exec_beq,
+            (opCodes['BRANCH'], funct3_codes['BNE'], None): handlers.exec_bne,
+            (opCodes['BRANCH'], funct3_codes['BLT'], None): handlers.exec_blt,
+            (opCodes['BRANCH'], funct3_codes['BGE'], None): handlers.exec_bge,
+            (opCodes['BRANCH'], funct3_codes['BLTU'], None): handlers.exec_bltu,
+            (opCodes['BRANCH'], funct3_codes['BGEU'], None): handlers.exec_bgeu,
+            
+            # Jump instructions
+            (opCodes['JAL'], None, None): handlers.exec_jal,
+            (opCodes['JALR'], 0b000, None): handlers.exec_jalr,
+            
+            # U-type instructions
+            (opCodes['LUI'], None, None): handlers.exec_lui,
+            (opCodes['AUIPC'], None, None): handlers.exec_auipc,
+        }
   def run(self):
     for i in range(1024):  # Safety limit
       while self.pc < self.program_length:
@@ -73,8 +123,8 @@ class ApocaCore:
     else:
         key = (opcode, funct3, None)
     
-    if key in self._dispatch:
-        self._dispatch[key](rd, rs1, rs2, imm)
+    if key in self.dispatch:
+        self.dispatch[key](self,rd, rs1, rs2, imm)
     else:
         raise Exception(f"Unknown instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}")
   def examine_all_registers(self):
@@ -91,41 +141,13 @@ class ApocaCore:
   def write_memory(self, address,value,size):
     for i in range(size):
       self.memory[address+i] = (value >> (i*8)) & 0xFF
-  def _exec_add(self, rd, rs1, rs2, imm):
-        self.registers[rd] = self.registers[rs1] + self.registers[rs2]
-  def _exec_sub(self, rd, rs1, rs2, imm):
-      self.registers[rd] = self.registers[rs1] - self.registers[rs2]
-  def _exec_addi(self, rd, rs1, rs2, imm):
-        self.registers[rd] = self.registers[rs1] + imm
-  def _exec_load(self, rd, rs1, rs2, imm):
-        self.registers[rd]=self.read_memory(self.registers[rs1]+imm, 4)
-  def _exec_store(self, rd, rs1, rs2, imm):
-        self.write_memory(self.registers[rs1] + imm, self.registers[rs2],4)
-  def _exec_beq(self, rd, rs1, rs2, imm):
-        if self.registers[rs1] ==self.registers[rs2]:
-          self.pc +=(imm<<1)
-  def _exec_bne(self, rd, rs1, rs2, imm):
-        if self.registers[rs1] !=self.registers[rs2]:
-          self.pc +=(imm<<1)
-  def _exec_nop(self, rd, rs1, rs2, imm):
-        # do nothing
-        pass
-program = [
-    0x00A00513,  # ADDI x10, x0, 5    # Set x10 = 5
-    0x00600593,  # ADDI x11, x0, 6    # Set x11 = 6
-    0x00b50633,  # ADD x12, x10, x11  # Set x12 = x10 + x11 = 11
-    0x00c02023,  # SW x11, 0(x0)      # Store x11 at memory address 0+x0
-    0x00002083,  # LW x1, 0(x0)       # Load into x1 from memory address 0+x0
-]
+
 if __name__ == '__main__':
     parser=Parser()
     filename = parser.arguments()
     machine = parser.assemble(filename)
-    if(parser.debug=='Run'):
+    if(parser.run=='Run'):
       emulator = ApocaCore()
       emulator.load_program(machine)
       emulator.run()
       emulator.examine_all_registers()
-    # Check results
-    #print(f'Register x12 (should be 16): {emulator.registers[12]}')
-    #print(f'Register x1 (loaded from memory): {emulator.registers[1]}')
