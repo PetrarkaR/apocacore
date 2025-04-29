@@ -15,6 +15,8 @@ class Parser():
       self.symbols = {}
       self.debug = False
       self.opcode_map = instruction_map
+      self.data_name= None
+      self.data = []
   def arguments(self):
     parser =argparse.ArgumentParser(description='parser for the assembly of the custom processor')
     parser.add_argument('-f',required=True,help='Input file')
@@ -34,7 +36,11 @@ class Parser():
   def first_pass(self):
     pc=0
     for line in self.lines:
+      section =re.match(r"data:",line)
       m = re.match(r"^(\w+):",line)
+      if section:
+        section = m.group(1)
+        self.parse_data(line, pc)
       if m:
         label =m.group(1)
         self.symbols[label] = pc
@@ -53,6 +59,14 @@ class Parser():
     if self.debug=='debug':
             for addr, cmd in enumerate(self.commands):
                 print(f"{addr*4:04x}: {cmd:08x}")
+  def parse_data(self, line, pc):
+    parts = [tok for tok in re.split(r"[,\s()]+", line) if tok]
+    self.data_name= parts[1]
+    self.data = parts[2:]
+    print(f"data name is {self.data_name} and the values are {self.data}")
+
+
+
   def parse_line(self, line, pc):
         # split tokens, filter empties
         parts = [tok for tok in re.split(r"[,\s()]+", line) if tok]

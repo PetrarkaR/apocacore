@@ -9,8 +9,10 @@ class ApocaCore:
     self.f_registers =[0.0]*16 
     self.pc=0
     self.memory=[0]*memory_size
-
     self.build_map()
+    self.VLEN = 64
+    self.MAX_SEW=8
+
 
   def build_map(self):
     handlers=InstructionHandlers()

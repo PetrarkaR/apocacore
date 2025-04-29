@@ -7,3 +7,5 @@ start:
     LW x1, 16(x0)
     SW x11, 16(x0)
     LW x2, 16(x0)
+data: vector 1 2 3 4 5 6 7 8
+    
