@@ -12,6 +12,10 @@ class ApocaCore:
     self.build_map()
     self.VLEN = 64
     self.MAX_SEW=8
+    self.LMUL=1
+    self.vl=0
+    self.vtype = {'SEW':32,'LMUL':1}
+    self.vreg= [[0]*(self.VLEN//self.vtype['SEW']) for _ in range(16)]
 
 
   def build_map(self):
@@ -74,6 +78,8 @@ class ApocaCore:
             # U-type instructions
             (opCodes['LUI'], None, None): handlers.exec_lui,
             (opCodes['AUIPC'], None, None): handlers.exec_auipc,
+
+            (opCodes['VECTOR'], funct3_codes['WORD'], funct6_codes['STORE']): handlers.exec_vs
         }
   def run(self):
     for i in range(1024):  # Safety limit
@@ -100,6 +106,15 @@ class ApocaCore:
     
     if opcode == opCodes['ALU_IMM'] or opcode == opCodes['LOAD'] or opcode == opCodes['JALR']:
         imm = (instruction >> 20) if (instruction >> 31) == 0 else (instruction >> 20) | 0xFFFFF000
+    elif opcode == opCodes['VECTOR']:
+        # vector-format: funct6[31:26], vs2[20:16], vs1[15:11], vm[25], vd[11:7], funct3[14:12]
+        funct6 = (instruction >> 26) & 0x3F
+        vs2     = (instruction >> 20) & 0x1F
+        vs1     = (instruction >> 15) & 0x1F
+        vm      = (instruction >> 25) & 0x1
+        vd      = (instruction >> 7)  & 0x1F
+        funct3  = (instruction >> 12) & 0x7
+        return (opcode, vd, vs1, vs2, vm, funct6, funct3)
     elif opcode == opCodes['STORE']:
         imm_11_5 = (instruction >> 25) & 0x7F
         imm_4_0 = (instruction >> 7) & 0x1F

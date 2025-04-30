@@ -61,8 +61,8 @@ class Parser():
                 print(f"{addr*4:04x}: {cmd:08x}")
   def parse_data(self, line, pc):
     parts = [tok for tok in re.split(r"[,\s()]+", line) if tok]
-    self.data_name= parts[1]
-    self.data = parts[2:]
+    self.data_name= parts[0]
+    self.data = parts[1:]
     print(f"data name is {self.data_name} and the values are {self.data}")
 
 

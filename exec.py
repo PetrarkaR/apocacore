@@ -279,3 +279,11 @@ class InstructionHandlers:
         """Execute AUIPC instruction: rd = pc + (imm << 12)"""
         if rd != 0:
             processor.registers[rd] = processor.pc + (imm << 12)
+    @staticmethod
+    def exec_vs(processor, vs3, rs1, offset, imm):
+      base = processor.registers[rs1] + imm
+      SEW = processor.vtype['SEW'] // 8  # bytes per element
+      for i in range(processor.vl):
+          value = processor.VREG[vs3][i]
+          processor.write_memory(base + i * SEW, value, SEW)
+

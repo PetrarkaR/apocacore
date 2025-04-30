@@ -12,8 +12,8 @@ opCodes = {
   'STORE'   :0b0100011,
   'ALU_IMM' :0b0010011,
   'ALU_REG' :0b0110011,
+  'VECTOR'  :0b1010111
 }
-
 funct3_codes={
   'ADD_SUB' :0b000,
   'SLL'     :0b001,
@@ -46,6 +46,9 @@ fp_opcodes = {
     'FSUB_S': 0b1010011,  # Floating-point subtract single-precision
     'FMUL_S': 0b1010011,  # Floating-point multiply single-precision
     'FDIV_S': 0b1010011,  # Floating-point divide single-precision
+}
+funct6_codes={
+  'STORE'   : 0b000000,
 }
 instruction_map = {
     # R-type instructions (ALU operations with registers)
@@ -96,6 +99,7 @@ instruction_map = {
     'SH': {'opcode': opCodes['STORE'], 'funct3': funct3_codes['HALF']},
     'SW': {'opcode': opCodes['STORE'], 'funct3': funct3_codes['WORD']},
     
+    
     # B-type instructions (Branches)
     'BEQ': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BEQ']},
     'BNE': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BNE']},
@@ -110,4 +114,5 @@ instruction_map = {
     
     # J-type instructions
     'JAL': {'opcode': opCodes['JAL']},
+    'SV' : {'opcode': opCodes['VECTOR'], 'funct3':funct3_codes['WORD'],'funct6':funct6_codes['STORE']},
 }
