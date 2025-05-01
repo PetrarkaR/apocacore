@@ -6,6 +6,11 @@ start:
     SW x11, 16(x0)
     LW x1, 16(x0)
     SW x11, 16(x0)
-    LW x2, 16(x0)
-    SV v1,vector1(x0)
+    LW x1, 512(x0)
+    LW x2, 516(x0)
+    LW x3, 520(x0)
+    LW x4, 524(x0)
+    LW x5, 528(x0)
+    LW x6, 532(x0)
+    LW x7, 536(x0)
 data: vector1  1 2 3 4 5 6 7 8 

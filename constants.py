@@ -48,7 +48,10 @@ fp_opcodes = {
     'FDIV_S': 0b1010011,  # Floating-point divide single-precision
 }
 funct6_codes={
-  'STORE'   : 0b000000,
+  'LOAD'    : 0b0000,
+  'STORE'   : 0b0001,
+  'ADD'     : 0b0010,
+  'SUB'     : 0b0011,
 }
 instruction_map = {
     # R-type instructions (ALU operations with registers)

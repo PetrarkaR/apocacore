@@ -5,15 +5,17 @@
 import re
 import argparse
 from constants import *
-
+from cpu import *
 class Parser():
   def __init__(self):
+      self.core = ApocaCore()
       self.filename = None
       self.errors = 0 
       self.lines = []
       self.commands = []
       self.symbols = {}
       self.debug = False
+      self.var_dict = []
       self.opcode_map = instruction_map
       self.data_name= None
       self.data = []
@@ -35,12 +37,14 @@ class Parser():
   
   def first_pass(self):
     pc=0
+    i=0
     for line in self.lines:
+      i=i+1
       section =re.match(r"data:",line)
       m = re.match(r"^(\w+):",line)
       if section:
         section = m.group(1)
-        self.parse_data(line, pc)
+        self.parse_data(line, int(i))
       if m:
         label =m.group(1)
         self.symbols[label] = pc
@@ -59,11 +63,13 @@ class Parser():
     if self.debug=='debug':
             for addr, cmd in enumerate(self.commands):
                 print(f"{addr*4:04x}: {cmd:08x}")
-  def parse_data(self, line, pc):
+  def parse_data(self, line, i):
     parts = [tok for tok in re.split(r"[,\s()]+", line) if tok]
     self.data_name= parts[0]
     self.data = parts[1:]
-    print(f"data name is {self.data_name} and the values are {self.data}")
+    self.data.pop(0)
+    self.var_dict.append(self.data)
+
 
 
 
@@ -119,7 +125,7 @@ class Parser():
       self.load(filename)
       self.first_pass()
       self.second_pass()
-      return self.commands
+      return self.commands, self.var_dict
 
   def parse(self, filename):
       if(filename.endswith('.apo')==True):

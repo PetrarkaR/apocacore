@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-from fileParser import Parser
 from constants import *
 import typing
 from exec import InstructionHandlers
@@ -16,6 +15,7 @@ class ApocaCore:
     self.vl=0
     self.vtype = {'SEW':32,'LMUL':1}
     self.vreg= [[0]*(self.VLEN//self.vtype['SEW']) for _ in range(16)]
+    self.next_address=0
 
 
   def build_map(self):
@@ -87,6 +87,12 @@ class ApocaCore:
             ins = self.fetch()
             decoded = self.decode(ins)
             self.execute(*decoded)
+  def load_memory(self, memory_vectors):
+    base_address = 512
+    for i, vector in enumerate(memory_vectors):  # each vector is a list of values
+        for j, val in enumerate(vector):
+            address = base_address + (i * len(vector) + j) * 8  # each value is 8 bytes
+            self.write_memory(address, int(val, 0) if isinstance(val, str) else val, 8)
 
   def load_program(self,program):
     self.memory[:len(program)] = program
@@ -159,12 +165,3 @@ class ApocaCore:
     for i in range(size):
       self.memory[address+i] = (value >> (i*8)) & 0xFF
 
-if __name__ == '__main__':
-    parser=Parser()
-    filename = parser.arguments()
-    machine = parser.assemble(filename)
-    if(parser.run=='Run'):
-      emulator = ApocaCore()
-      emulator.load_program(machine)
-      emulator.run()
-      emulator.examine_all_registers()
