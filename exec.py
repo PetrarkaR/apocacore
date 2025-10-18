@@ -280,10 +280,52 @@ class InstructionHandlers:
         if rd != 0:
             processor.registers[rd] = processor.pc + (imm << 12)
     @staticmethod
-    def exec_vs(processor, vs3, rs1, offset, imm):
-      base = processor.registers[rs1] + imm
-      SEW = processor.vtype['SEW'] // 8  # bytes per element
-      for i in range(processor.vl):
-          value = processor.VREG[vs3][i]
-          processor.write_memory(base + i * SEW, value, SEW)
+    def exec_vs(processor, vs3, rs1, imm, vm):  # 4 parameters after processor
+        base = processor.registers[rs1] + imm
+        SEW = processor.vtype['SEW'] // 8
+        
+        print(f"[VSTORE] vs3={vs3}, rs1=x{rs1}={processor.registers[rs1]}, imm={imm}, base={base}")
+        print(f"[VSTORE] vl={processor.vl}, SEW={SEW}")
+        
+        for i in range(processor.vl):
+            value = processor.vreg[vs3][i]
+            print(f"  Storing v{vs3}[{i}] = {value} to addr {base + i * SEW}")
+            processor.write_memory(base + i * SEW, value, SEW)
+        
+        print(f"[VSTORE] Complete!")
+    @staticmethod
+    def exec_vl(processor, vd, rs1, imm, vm):  # ← Fixed parameter names
+        base_address = processor.registers[rs1] + imm
+        
+        elements_to_load = processor.vl
+        if elements_to_load == 0:
+            elements_to_load = processor.VLEN // processor.vtype['SEW']
+        
+        SEW_bytes = processor.vtype['SEW'] // 8
+        
+        for j in range(elements_to_load):
+            if j >= len(processor.vreg[vd]):
+                break
+            
+            addr = base_address + j * SEW_bytes
+            value = processor.read_memory(addr, SEW_bytes)
+            
+            processor.vreg[vd][j] = value
+            print(f"  v{vd}[{j}] = {value} (from addr {addr})")
 
+
+
+
+
+"""
+    @staticmethod
+    def exec_lb(processor, rd, rs1, rs2, imm):
+        Execute LB instruction: rd = sign_extend(memory[rs1 + imm][7:0])
+        if rd != 0:
+            address = processor.registers[rs1] + imm
+            value = processor.memory[address] & 0xFF
+            # Sign extend from 8 bits
+            if value & 0x80:
+                value |= 0xFFFFFF00
+            processor.registers[rd] = value
+"""

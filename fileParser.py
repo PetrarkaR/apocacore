@@ -106,6 +106,26 @@ class Parser():
             offset = args[1]
             rs1 = args[2]
             return self.encode_s_type(int(rs2[1:]), int(rs1[1:]), int(offset), info['funct3'], info['opcode'])
+        
+                # Vector instructions: LV, SV, etc.
+        if mnemonic == 'LV' or mnemonic == 'SV':
+                # LV v1, 512(x0) -> args = ['v1', '512', 'x0']
+                vs3 = args[0]
+                offset = args[1]
+                rs1 = args[2]
+
+                vs3_num = int(vs3[1:])  # v1 -> 1
+                rs1_num = int(rs1[1:])  # x0 -> 0
+                imm = int(offset)       # 512 -> 512
+                
+                print(f"[ASSEMBLER] {mnemonic} v{vs3_num}, {imm}(x{rs1_num})")
+
+                # Use I-type encoding for vector load/store
+                return self.encode_i_type(vs3_num, rs1_num, imm, info['funct3'], info['opcode'])
+
+
+
+
 
         raise NotImplementedError(f"Encoding for '{mnemonic}' not implemented at PC {pc}")
 
@@ -121,6 +141,15 @@ class Parser():
       imm11_5 = (imm >> 5) & 0x7f
       imm4_0 = imm & 0x1f
       return (imm11_5 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (imm4_0 << 7) | opcode
+  def encode_v_type(self, vs3, rs1, imm, funct3, funct6, opcode):
+    # For vector load/store, use I-type format like scalar loads:
+    # [imm[11:0]][rs1][funct3][vd][opcode]
+    # This matches how your decoder extracts the immediate
+    
+    imm12 = imm & 0xFFF  # 12-bit immediate (supports up to 4095)
+    
+    return (imm12 << 20) | (rs1 << 15) | (funct3 << 12) | (vs3 << 7) | opcode
+
   def assemble(self, filename):
       self.load(filename)
       self.first_pass()

@@ -9,8 +9,12 @@ start:
     LW x1, 512(x0)
     LW x2, 516(x0)
     LW x3, 520(x0)
-    LW x4, 524(x0)
-    LW x5, 528(x0)
-    LW x6, 532(x0)
-    LW x7, 536(x0)
+    LW x4, 540(x0)
+    LW x5, 544(x0)
+    LW x6, 548(x0)
+    LW x7, 552(x0)
+    LV v1, 512(x0)
+    LV v2, 512(x0)
+    SV v1, 768(x0)
 data: vector1  1 2 3 4 5 6 7 8 
+data: vector2  2 4 6 8 10 12 14 16

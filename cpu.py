@@ -9,10 +9,10 @@ class ApocaCore:
     self.pc=0
     self.memory=[0]*memory_size
     self.build_map()
-    self.VLEN = 64
+    self.VLEN = 256
     self.MAX_SEW=8
     self.LMUL=1
-    self.vl=0
+    self.vl=8
     self.vtype = {'SEW':32,'LMUL':1}
     self.vreg= [[0]*(self.VLEN//self.vtype['SEW']) for _ in range(16)]
     self.next_address=0
@@ -79,7 +79,8 @@ class ApocaCore:
             (opCodes['LUI'], None, None): handlers.exec_lui,
             (opCodes['AUIPC'], None, None): handlers.exec_auipc,
 
-            (opCodes['VECTOR'], funct3_codes['WORD'], funct6_codes['STORE']): handlers.exec_vs
+            (opCodes_vector['VECTOR_LOAD'], 0, 0): handlers.exec_vl,
+            (opCodes_vector['VECTOR_STORE'], 0, 0): handlers.exec_vs,
         }
   def run(self):
     for i in range(1024):  # Safety limit
@@ -91,7 +92,7 @@ class ApocaCore:
     base_address = 512
     for i, vector in enumerate(memory_vectors):  # each vector is a list of values
         for j, val in enumerate(vector):
-            address = base_address + (i * len(vector) + j) * 8  # each value is 8 bytes
+            address = base_address + (i * len(vector) + j) * 4  # each value is 8 bytes
             self.write_memory(address, int(val, 0) if isinstance(val, str) else val, 8)
 
   def load_program(self,program):
@@ -103,6 +104,7 @@ class ApocaCore:
     self.pc+=1
     return instruction
   def decode(self, instruction):
+
     opcode = instruction & 0x7F
     rd = (instruction >> 7) & 0x1F
     funct3_codes = (instruction >> 12) & 0x7
@@ -110,17 +112,37 @@ class ApocaCore:
     rs2 = (instruction >> 20) & 0x1F
     funct7 = (instruction >> 25) & 0x7F
     
+    if opcode in opCodes_vector.values():
+        print(f"[DECODE RAW] instruction = 0x{instruction:08x}")
+        funct6 = (instruction >> 26) & 0x3F
+        vm = (instruction >> 25) & 0x1
+        rs2 = (instruction >> 20) & 0x1F  # vs2 or could be part of immediate
+        rs1 = (instruction >> 15) & 0x1F  # vs1 / base register
+        funct3 = (instruction >> 12) & 0x7
+        rd = (instruction >> 7) & 0x1F    # vd
+        if opcode == opCodes_vector['VECTOR_LOAD'] or opcode == opCodes_vector['VECTOR_STORE']:
+            # Extract immediate from bits [31:20] like scalar loads
+            imm = (instruction >> 20) & 0xFFF
+            print(f"  Extracted imm from bits [31:20]: {imm} = 0x{imm:03x}")
+            # Sign extend from 12 bits
+            if imm & 0x800:
+                imm |= 0xFFFFF000
+            
+            funct6 = 0  # Not used for load/store
+            vm = 1      # Default mask
+            return ('vector', opcode, rd, funct3, rs1, imm, funct6, vm)
+
+        # For vector load/store, extract immediate
+        # Format: imm[11:0] = {funct6[5:0], vm, rs2[4:0]}
+        imm = (funct6 << 6) | (vm << 5) | rs2
+        # Sign extend from 12 bits
+        if imm & 0x800:
+            imm |= 0xFFFFF000
+
+        return ('vector', opcode, rd, funct3, rs1, imm, funct6, vm)
+
     if opcode == opCodes['ALU_IMM'] or opcode == opCodes['LOAD'] or opcode == opCodes['JALR']:
         imm = (instruction >> 20) if (instruction >> 31) == 0 else (instruction >> 20) | 0xFFFFF000
-    elif opcode == opCodes['VECTOR']:
-        # vector-format: funct6[31:26], vs2[20:16], vs1[15:11], vm[25], vd[11:7], funct3[14:12]
-        funct6 = (instruction >> 26) & 0x3F
-        vs2     = (instruction >> 20) & 0x1F
-        vs1     = (instruction >> 15) & 0x1F
-        vm      = (instruction >> 25) & 0x1
-        vd      = (instruction >> 7)  & 0x1F
-        funct3  = (instruction >> 12) & 0x7
-        return (opcode, vd, vs1, vs2, vm, funct6, funct3)
     elif opcode == opCodes['STORE']:
         imm_11_5 = (instruction >> 25) & 0x7F
         imm_4_0 = (instruction >> 7) & 0x1F
@@ -135,33 +157,65 @@ class ApocaCore:
         imm = (imm_12 << 12) | (imm_11 << 11) | (imm_10_5 << 5) | (imm_4_1 << 1)
         if imm_12:  # Sign extend
             imm |= 0xFFFFE000
+
     else:
         # Default case (includes LUI, AUIPC which have upper immediate)
         imm = instruction >> 20
         
-    return opcode, rd, funct3_codes, rs1, rs2, funct7, imm
-  def execute(self, opcode, rd, funct3, rs1, rs2, funct7, imm):
-    if opcode in [opCodes['ALU_REG']]:
-        key = (opcode, funct3, funct7)
-    else:
-        key = (opcode, funct3, None)
+    return ('scalar',opcode, rd, funct3_codes, rs1, rs2, funct7, imm)
+  def execute(self, *decoded):
+    instruction_type = decoded[0]
     
-    if key in self.dispatch:
-        self.dispatch[key](self,rd, rs1, rs2, imm)
-    else:
-        raise Exception(f"Unknown instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}")
+    if instruction_type == 'vector':
+        _, opcode, rd, funct3, rs1, imm, funct6, vm = decoded  # ← Changed rs2 to imm
+        key = (opcode, funct3, funct6)
+        print(f"[EXECUTE] Vector key = ({opcode:02x}, {funct3}, {funct6})")
+        print(f"[EXECUTE] Key in dispatch? {key in self.dispatch}")
+
+        if key in self.dispatch:
+            self.dispatch[key](self, rd, rs1, imm, vm)  # ← Pass imm correctly
+        else:
+            raise Exception(f"Unknown vector instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}, funct6=0x{funct6:x}")
+    
+    elif instruction_type == 'scalar':
+        _, opcode, rd, funct3, rs1, rs2, funct7, imm = decoded
+        
+        if opcode in [opCodes['ALU_REG']]:
+            key = (opcode, funct3, funct7)
+        else:
+            key = (opcode, funct3, None)
+        
+        if key in self.dispatch:
+            self.dispatch[key](self, rd, rs1, rs2, imm)
+        else:
+            raise Exception(f"Unknown instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}")
+          
   def examine_all_registers(self):
     # group into rows of 8 registers
     for base in range(0, 16, 8):
         row = " ".join(f"x{j:02}={self.registers[j]:>3}" 
                         for j in range(base, base+8))
         print(row)
-  def read_memory(self, address,size):
-    value = 0
-    for i in range(size):
-      value |= self.memory[address+i] <<(i*8)
-    return value
+  def read_memory(self, address, size):
+      value = 0
+      for i in range(size):
+          value |= self.memory[address + i] << (i * 8)
+      return value  # <-- ADD THIS!
+    
   def write_memory(self, address,value,size):
     for i in range(size):
       self.memory[address+i] = (value >> (i*8)) & 0xFF
+  def dump_memory(self, start, length):
+      print(f"\n=== Memory Dump: {start} to {start + length - 1} ===")
+      for i in range(start, start + length, 4):
+          word = self.read_memory(i, 4)
+          print(f"  [{i:04d}] = 0x{word:08x} ({word})")
+      print()
 
+  def dump_vector_registers(self):
+      print("\n=== Vector Registers ===")
+      for i, vreg in enumerate(self.vreg):
+          non_zero = [val for val in vreg if val != 0]
+          if non_zero:
+              print(f"  v{i}: {non_zero[:8]}")  # Show first 8 elements
+      print()

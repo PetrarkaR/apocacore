@@ -5,14 +5,19 @@
 opCodes = {
   'LUI'     :0b0110111,
   'AUIPC'   :0b0010111,
-  'JAL'     :0b1101111,
-  'JALR'    :0b1100111,
-  'BRANCH'  :0b1100011,
+  'JAL'     :0b0101111,
+  'JALR'    :0b0100111,
+  'BRANCH'  :0b0100011,
   'LOAD'    :0b0000011,
   'STORE'   :0b0100011,
   'ALU_IMM' :0b0010011,
-  'ALU_REG' :0b0110011,
-  'VECTOR'  :0b1010111
+  'ALU_REG' :0b0110011
+}
+opCodes_vector={
+  'VECTOR_LOAD'  :0b1010111,
+  'VECTOR_STORE' :0b1011000,
+  'VECTOR_ADD'   :0b1011001,
+  'VECTOR_MUL'   :0b1011010,
 }
 funct3_codes={
   'ADD_SUB' :0b000,
@@ -41,18 +46,16 @@ funct7_codes={
   'SRA'     :0b0100000,
   'MUL'     :0b0000001,
 }
-fp_opcodes = {
-    'FADD_S': 0b1010011,  # Floating-point add single-precision
-    'FSUB_S': 0b1010011,  # Floating-point subtract single-precision
-    'FMUL_S': 0b1010011,  # Floating-point multiply single-precision
-    'FDIV_S': 0b1010011,  # Floating-point divide single-precision
-}
-funct6_codes={
-  'LOAD'    : 0b0000,
-  'STORE'   : 0b0001,
-  'ADD'     : 0b0010,
-  'SUB'     : 0b0011,
-}
+funct6_codes = {
+    'VADD' : 0b000000,
+    'VSUB' : 0b000010,
+    'VMUL' : 0b100101,
+    'VDIV' : 0b100001,
+    'VSTR' : 0b000001,
+    'VLOAD': 0b000101,
+        # Add other vector operation codes as needed
+    }
+
 instruction_map = {
     # R-type instructions (ALU operations with registers)
     'ADD': {'opcode': opCodes['ALU_REG'], 'funct3': funct3_codes['ADD_SUB'], 'funct7': funct7_codes['STANDARD']},
@@ -117,5 +120,7 @@ instruction_map = {
     
     # J-type instructions
     'JAL': {'opcode': opCodes['JAL']},
-    'SV' : {'opcode': opCodes['VECTOR'], 'funct3':funct3_codes['WORD'],'funct6':funct6_codes['STORE']},
+    # v type instructions
+    'SV' : {'opcode': opCodes_vector['VECTOR_STORE'],'funct3':funct3_codes['ADD_SUB'] ,'funct6':funct6_codes['VSTR']},
+    'LV' : {'opcode': opCodes_vector['VECTOR_LOAD'], 'funct3':funct3_codes['ADD_SUB'] ,'funct6':funct6_codes['VLOAD']},
 }
