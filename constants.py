@@ -7,7 +7,7 @@ opCodes = {
   'AUIPC'   :0b0010111,
   'JAL'     :0b0101111,
   'JALR'    :0b0100111,
-  'BRANCH'  :0b0100011,
+  'BRANCH'  :0b0111111,
   'LOAD'    :0b0000011,
   'STORE'   :0b0100011,
   'ALU_IMM' :0b0010011,
@@ -34,6 +34,7 @@ funct3_codes={
   'BYTE_U'  :0B100,
   'HALF_U'  :0B101,
   'BEQ'     :0B000,
+  'BEQI'    :0B010,
   'BNE'     :0B001,
   'BLT'     :0B100,
   'BGE'     :0B101,
@@ -53,7 +54,6 @@ funct6_codes = {
     'VDIV' : 0b100001,
     'VSTR' : 0b000001,
     'VLOAD': 0b000101,
-        # Add other vector operation codes as needed
     }
 
 instruction_map = {
@@ -108,6 +108,7 @@ instruction_map = {
     
     # B-type instructions (Branches)
     'BEQ': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BEQ']},
+    'BEQI': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BEQI']},
     'BNE': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BNE']},
     'BLT': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BLT']},
     'BGE': {'opcode': opCodes['BRANCH'], 'funct3': funct3_codes['BGE']},
@@ -123,4 +124,5 @@ instruction_map = {
     # v type instructions
     'SV' : {'opcode': opCodes_vector['VECTOR_STORE'],'funct3':funct3_codes['ADD_SUB'] ,'funct6':funct6_codes['VSTR']},
     'LV' : {'opcode': opCodes_vector['VECTOR_LOAD'], 'funct3':funct3_codes['ADD_SUB'] ,'funct6':funct6_codes['VLOAD']},
+    'VADD' : {'opcode': opCodes_vector['VECTOR_ADD'], 'funct3':funct3_codes['ADD_SUB'] ,'funct6':funct6_codes['VADD']},
 }

@@ -212,11 +212,12 @@ class InstructionHandlers:
     
     # Branch instructions
     @staticmethod
-    def exec_beq(processor, rd, rs1, rs2, imm):
+    def exec_beq(processor, rs1, rs2, imm):
         """Execute BEQ instruction: if rs1 == rs2 then pc += imm"""
         if processor.registers[rs1] == processor.registers[rs2]:
-            processor.pc = processor.pc + imm - 4  # -4 to compensate for the PC increment in execute
-    
+            # imm is in bytes, convert to words
+            word_offset = imm // 4
+            processor.pc = processor.pc + word_offset - 1  # -1 for word increment
     @staticmethod
     def exec_bne(processor, rd, rs1, rs2, imm):
         """Execute BNE instruction: if rs1 != rs2 then pc += imm"""
@@ -283,16 +284,11 @@ class InstructionHandlers:
     def exec_vs(processor, vs3, rs1, imm, vm):  # 4 parameters after processor
         base = processor.registers[rs1] + imm
         SEW = processor.vtype['SEW'] // 8
-        
-        print(f"[VSTORE] vs3={vs3}, rs1=x{rs1}={processor.registers[rs1]}, imm={imm}, base={base}")
-        print(f"[VSTORE] vl={processor.vl}, SEW={SEW}")
-        
+                
         for i in range(processor.vl):
             value = processor.vreg[vs3][i]
-            print(f"  Storing v{vs3}[{i}] = {value} to addr {base + i * SEW}")
             processor.write_memory(base + i * SEW, value, SEW)
         
-        print(f"[VSTORE] Complete!")
     @staticmethod
     def exec_vl(processor, vd, rs1, imm, vm):  # ← Fixed parameter names
         base_address = processor.registers[rs1] + imm
@@ -311,8 +307,10 @@ class InstructionHandlers:
             value = processor.read_memory(addr, SEW_bytes)
             
             processor.vreg[vd][j] = value
-            print(f"  v{vd}[{j}] = {value} (from addr {addr})")
-
+    @staticmethod
+    def exec_vadd(processor, rd,rs1,rs2):  # 4 parameters after processor
+        for i in range(processor.vl):
+            processor.vreg[rd][i]= processor.vreg[rs1][i]+processor.vreg[rs2][i]
 
 
 

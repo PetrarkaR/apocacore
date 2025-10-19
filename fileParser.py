@@ -19,6 +19,7 @@ class Parser():
       self.opcode_map = instruction_map
       self.data_name= None
       self.data = []
+      self.jump_address = {}
   def arguments(self):
     parser =argparse.ArgumentParser(description='parser for the assembly of the custom processor')
     parser.add_argument('-f',required=True,help='Input file')
@@ -48,8 +49,9 @@ class Parser():
       if m:
         label =m.group(1)
         self.symbols[label] = pc
+        self.jump_address[label] = pc
         if self.debug=='debug':
-          print(f"label {label} at addres {pc}")
+          print(f"label {label} at adress {pc}")
       else:
         pc+=4
   def second_pass(self):
@@ -60,9 +62,7 @@ class Parser():
       word = self.parse_line(line,pc)
       self.commands.append(word)
       pc+=4
-    if self.debug=='debug':
-            for addr, cmd in enumerate(self.commands):
-                print(f"{addr*4:04x}: {cmd:08x}")
+
   def parse_data(self, line, i):
     parts = [tok for tok in re.split(r"[,\s()]+", line) if tok]
     self.data_name= parts[0]
@@ -82,7 +82,8 @@ class Parser():
         info = self.opcode_map.get(mnemonic)
         if not info:
             raise ValueError(f"Unknown instruction '{mnemonic}' at PC {pc}")
-
+        if self.debug=='debug':
+           print(f"[MNEMONIC]:{mnemonic} [PARTS]:{args}")
         # I-type: ADDI, LW, add more later, vectors probably
         if mnemonic == 'ADDI' or mnemonic == 'LW':
             rd = args[0]
@@ -107,7 +108,7 @@ class Parser():
             rs1 = args[2]
             return self.encode_s_type(int(rs2[1:]), int(rs1[1:]), int(offset), info['funct3'], info['opcode'])
         
-                # Vector instructions: LV, SV, etc.
+                # Vector instructions: LV, SV, itd
         if mnemonic == 'LV' or mnemonic == 'SV':
                 # LV v1, 512(x0) -> args = ['v1', '512', 'x0']
                 vs3 = args[0]
@@ -118,17 +119,36 @@ class Parser():
                 rs1_num = int(rs1[1:])  # x0 -> 0
                 imm = int(offset)       # 512 -> 512
                 
-                print(f"[ASSEMBLER] {mnemonic} v{vs3_num}, {imm}(x{rs1_num})")
 
                 # Use I-type encoding for vector load/store
                 return self.encode_i_type(vs3_num, rs1_num, imm, info['funct3'], info['opcode'])
-
-
+        if mnemonic =='VADD':
+           rd = args[0]
+           rs1 = args[1]
+           rs2 = args[2]
+           rd_num = int(rd[1:])
+           rs1_num = int(rs1[1:])
+           rs2_num = int(rs2[1:])
+           encoded = self.encode_v_type(info['funct6'], 1, rs2_num, rs1_num, info['funct3'], rd_num, info['opcode'])
+           return encoded
+        if mnemonic =='BEQ':
+           rs1=args[0]
+           rs2=args[1]
+           rs1_num = int(rs1[1:])
+           rs2_num = int(rs2[1:])
+           label=args[2]
+           target=self.jump_address[label]
+           offset=target-pc
+           imm = (offset >> 1) & 0xFFF  # 12-bit immediate
+           encoded = self.encode_b_type(imm,rs1_num,rs2_num,info['funct3'],info['opcode'])
+           return encoded
 
 
 
         raise NotImplementedError(f"Encoding for '{mnemonic}' not implemented at PC {pc}")
-
+  def encode_b_type(self,imm,rs1,rs2,funct3,opcode):
+     encoded = imm<<20|rs1<<15|rs2<<10|funct3<<7|opcode
+     return encoded
   def encode_r_type(self, rd, rs1, rs2, funct3, funct7, opcode):
       # [funct7][rs2][rs1][funct3][rd][opcode]
       return (funct7 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode
@@ -141,14 +161,13 @@ class Parser():
       imm11_5 = (imm >> 5) & 0x7f
       imm4_0 = imm & 0x1f
       return (imm11_5 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (imm4_0 << 7) | opcode
-  def encode_v_type(self, vs3, rs1, imm, funct3, funct6, opcode):
-    # For vector load/store, use I-type format like scalar loads:
-    # [imm[11:0]][rs1][funct3][vd][opcode]
-    # This matches how your decoder extracts the immediate
-    
-    imm12 = imm & 0xFFF  # 12-bit immediate (supports up to 4095)
-    
-    return (imm12 << 20) | (rs1 << 15) | (funct3 << 12) | (vs3 << 7) | opcode
+  def encode_v_type(self, funct6, vm,rs1,rs2,funct3,rd,opcode):
+
+    #  funct6   | vm      | rs2     | rs1    | funct3  | rd     | opcode |
+    # [31:26]  | [25]    | [24:20] | [19:15]| [14:12] | [11:7] | [6:0]  |
+
+    return (funct6 << 26) | (vm << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | opcode\
+
 
   def assemble(self, filename):
       self.load(filename)

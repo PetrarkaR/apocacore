@@ -1,8 +1,11 @@
 #apocacore
 start:
     ADDI x10, x0, 5
-    ADDI x11, x0, 6
+    ADDI x11, x0, 5
     ADD x12, x10, x11
+    LV v1, 512(x0)
+    LV v2, 544(x0)
+    BEQ x10, x11, jump1
     SW x11, 16(x0)
     LW x1, 16(x0)
     SW x11, 16(x0)
@@ -11,10 +14,10 @@ start:
     LW x3, 520(x0)
     LW x4, 540(x0)
     LW x5, 544(x0)
-    LW x6, 548(x0)
-    LW x7, 552(x0)
-    LV v1, 512(x0)
-    LV v2, 512(x0)
+
+jump1:
+
     SV v1, 768(x0)
+    VADD v3,v1,v2
 data: vector1  1 2 3 4 5 6 7 8 
 data: vector2  2 4 6 8 10 12 14 16

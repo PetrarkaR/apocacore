@@ -3,11 +3,12 @@ from constants import *
 import typing
 from exec import InstructionHandlers
 class ApocaCore:
-  def __init__(self,memory_size=1024):
+  def __init__(self,memory_size=1024,debug=False):
     self.registers = [0]*16
     self.f_registers =[0.0]*16 
     self.pc=0
     self.memory=[0]*memory_size
+    self.debug = debug
     self.build_map()
     self.VLEN = 256
     self.MAX_SEW=8
@@ -16,6 +17,7 @@ class ApocaCore:
     self.vtype = {'SEW':32,'LMUL':1}
     self.vreg= [[0]*(self.VLEN//self.vtype['SEW']) for _ in range(16)]
     self.next_address=0
+    self.jump_adress= {}
 
 
   def build_map(self):
@@ -81,6 +83,7 @@ class ApocaCore:
 
             (opCodes_vector['VECTOR_LOAD'], 0, 0): handlers.exec_vl,
             (opCodes_vector['VECTOR_STORE'], 0, 0): handlers.exec_vs,
+            (opCodes_vector['VECTOR_ADD'], funct3_codes['ADD_SUB'], funct6_codes['VADD']): handlers.exec_vadd,
         }
   def run(self):
     for i in range(1024):  # Safety limit
@@ -104,7 +107,7 @@ class ApocaCore:
     self.pc+=1
     return instruction
   def decode(self, instruction):
-
+    """default decoding"""
     opcode = instruction & 0x7F
     rd = (instruction >> 7) & 0x1F
     funct3_codes = (instruction >> 12) & 0x7
@@ -113,7 +116,6 @@ class ApocaCore:
     funct7 = (instruction >> 25) & 0x7F
     
     if opcode in opCodes_vector.values():
-        print(f"[DECODE RAW] instruction = 0x{instruction:08x}")
         funct6 = (instruction >> 26) & 0x3F
         vm = (instruction >> 25) & 0x1
         rs2 = (instruction >> 20) & 0x1F  # vs2 or could be part of immediate
@@ -123,14 +125,13 @@ class ApocaCore:
         if opcode == opCodes_vector['VECTOR_LOAD'] or opcode == opCodes_vector['VECTOR_STORE']:
             # Extract immediate from bits [31:20] like scalar loads
             imm = (instruction >> 20) & 0xFFF
-            print(f"  Extracted imm from bits [31:20]: {imm} = 0x{imm:03x}")
             # Sign extend from 12 bits
             if imm & 0x800:
                 imm |= 0xFFFFF000
             
             funct6 = 0  # Not used for load/store
             vm = 1      # Default mask
-            return ('vector', opcode, rd, funct3, rs1, imm, funct6, vm)
+            return ('vector_mem', opcode, rd, funct3, rs1, imm, funct6, vm)
 
         # For vector load/store, extract immediate
         # Format: imm[11:0] = {funct6[5:0], vm, rs2[4:0]}
@@ -138,8 +139,8 @@ class ApocaCore:
         # Sign extend from 12 bits
         if imm & 0x800:
             imm |= 0xFFFFF000
-
-        return ('vector', opcode, rd, funct3, rs1, imm, funct6, vm)
+        
+        return ('vector_arith', opcode, rd, funct6, funct3, rs1, rs2, vm)
 
     if opcode == opCodes['ALU_IMM'] or opcode == opCodes['LOAD'] or opcode == opCodes['JALR']:
         imm = (instruction >> 20) if (instruction >> 31) == 0 else (instruction >> 20) | 0xFFFFF000
@@ -150,33 +151,44 @@ class ApocaCore:
         if (imm_11_5 >> 6) & 1:  # Sign extend
             imm |= 0xFFFFF000
     elif opcode == opCodes['BRANCH']:
-        imm_12 = (instruction >> 31) & 0x1
-        imm_11 = (instruction >> 7) & 0x1
-        imm_10_5 = (instruction >> 25) & 0x3F
-        imm_4_1 = (instruction >> 8) & 0xF
-        imm = (imm_12 << 12) | (imm_11 << 11) | (imm_10_5 << 5) | (imm_4_1 << 1)
-        if imm_12:  # Sign extend
-            imm |= 0xFFFFE000
-
+        imm = (instruction >> 20) & 0xFFF  # Get 12 bits
+        
+        # Shift left by 1 (branches are 2-byte aligned, bit 0 is implicit 0)
+        imm = imm << 1
+        
+        # Sign extend from bit 12
+        if imm & 0x1000:  # Check if bit 12 is set (sign bit)
+            imm |= 0xFFFFE000  # Sign extend to 32 bits
+        opcode = instruction & 0x7F  # Bits [6:0] - unchanged
+        funct3 = (instruction >> 7) & 0x7  # Bits [9:7] - unchanged
+        rs1 = (instruction >> 10) & 0x1F  # Bits [14:10] - CHANGED (was 15)
+        rs2 = (instruction >> 15) & 0x1F  # Bits [19:15] - CHANGED (was 20)
+        return ('branch',opcode,imm,rs1,rs2,funct3)
     else:
         # Default case (includes LUI, AUIPC which have upper immediate)
         imm = instruction >> 20
         
     return ('scalar',opcode, rd, funct3_codes, rs1, rs2, funct7, imm)
   def execute(self, *decoded):
+    if self.debug==True:
+        print(decoded,(self.pc*4)-4)
     instruction_type = decoded[0]
-    
-    if instruction_type == 'vector':
+    if( instruction_type == 'vector_arith'):
+        _, opcode,rd,funct6,funct3,rs1,rs2,vm =decoded
+        key=(opcode,funct3,funct6)
+        if key in self.dispatch:
+            self.dispatch[key](self, rd, rs1,rs2 )  # ← Pass imm correctly
+    elif instruction_type == 'vector_mem':
         _, opcode, rd, funct3, rs1, imm, funct6, vm = decoded  # ← Changed rs2 to imm
         key = (opcode, funct3, funct6)
-        print(f"[EXECUTE] Vector key = ({opcode:02x}, {funct3}, {funct6})")
-        print(f"[EXECUTE] Key in dispatch? {key in self.dispatch}")
 
         if key in self.dispatch:
             self.dispatch[key](self, rd, rs1, imm, vm)  # ← Pass imm correctly
         else:
             raise Exception(f"Unknown vector instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}, funct6=0x{funct6:x}")
     
+    
+
     elif instruction_type == 'scalar':
         _, opcode, rd, funct3, rs1, rs2, funct7, imm = decoded
         
@@ -188,8 +200,13 @@ class ApocaCore:
         if key in self.dispatch:
             self.dispatch[key](self, rd, rs1, rs2, imm)
         else:
-            raise Exception(f"Unknown instruction: opcode=0x{opcode:02x}, funct3=0x{funct3:x}")
-          
+            raise Exception(f"Unknown instruction SCALAR: opcode=0x{opcode:02x}, funct3=0x{funct3:x}")
+        
+    elif(instruction_type=='branch'):
+       _,opcode,imm,rs1,rs2,funct3=decoded
+       key=(opcode,funct3,None)
+       if key in self.dispatch:
+            self.dispatch[key](self, rs1,rs2,imm )  # ← Pass imm correctly
   def examine_all_registers(self):
     # group into rows of 8 registers
     for base in range(0, 16, 8):
